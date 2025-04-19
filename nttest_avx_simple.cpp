@@ -171,6 +171,44 @@ void printv8si(v8si vx)
   }  
 }
 
+v8si v8si_sufix_min8(v8si x0, int m)
+{
+  // x0: a b c d e f g h
+  if (m < x0[7]) x0[7] = m;
+  v8si m0 = {1, 1, 3, 3, 5, 5, 7, 7};
+  v8si x1 = __builtin_shuffle(x0, m0); // x1: b b d d f f h h
+  v8si x2 = __builtin_ia32_pminsd256(x0, x1); // x2:  ab b cd d ef f gh h
+  v8si m1 = {2, 2, 3, 3, 6, 6, 7, 7};
+  v8si x3 = __builtin_shuffle(x2, m1); // x3: cd cd d d gh gh h h
+  v8si x4 = __builtin_ia32_pminsd256(x3, x2); // x4: abcd bcd cd d efgh fgh gh h
+  v8si m2 = {4, 4, 4, 4, 7, 7, 7, 7};
+  v8si x5 = __builtin_shuffle(x4, m2); // x5: efgh efgh efgh efgh h h h h
+  v8si x6 = __builtin_ia32_pminsd256(x4, x5); // x6: abcdefgh bcdefgh cdefgh defgh efgh fgh gh h
+  return x6;
+}
+
+v8si v8si_prefix_min8(v8si x0, int m)
+{
+  // x0: a b c d e f g h
+  if (m < x0[0]) x0[0] = m;
+  v8si m0 = {0, 0, 2, 2, 4, 4, 6, 6};
+  v8si x1 = __builtin_shuffle(x0, m0); // x1: a a c c e e g g
+  //printf("x1 "); printv4sl(x1); printf("\n");
+//  v8si x2 = Min(x0, x1); // x2:  a ab c cd e ef g gh
+  v8si x2 = __builtin_ia32_pminsd256(x0, x1);
+  //printf("x2 "); printv4sl(x2); printf("\n");
+  v8si m1 = {0, 0, 1, 1, 4, 4, 5, 5};
+  v8si x3 = __builtin_shuffle(x2, m1); // x3: a a ab ab e e ef ef
+  //printf("x3 "); printv4sl(x3); printf("\n");
+  v8si x4 = __builtin_ia32_pminsd256(x3, x2); // x4: a ab abc abcd e ef efg efgh
+  //printf("x4 "); printv4sl(x4); printf("\n");
+  v8si m2 = {0, 0, 0, 0, 3, 3, 3, 3};
+  v8si x5 = __builtin_shuffle(x4, m2); // x5: a a a a abcd abcd abcd abcd
+  v8si x6 = __builtin_ia32_pminsd256(x4, x5); // x6: a ab abc abcd abcde abcdef abcdefg abcdefgh
+  return x6;
+}
+
+
 void syncmer32(const string & seq, int length, int avx) {
 #define BUFW 26
 	opt::kmerLen = opt::smer_len;
@@ -209,10 +247,45 @@ void syncmer32(const string & seq, int length, int avx) {
 #endif
 			hval = buf[pos+ws-1];
 			left_hval[ws-1] = hval;
+#if 0
 			for (int i=ws-2; i>=0; i--) {
 				if (buf[pos+i] < hval) hval = buf[pos+i];
 				left_hval[i] = hval;
 			}
+#else
+			int ws2 = ws-2;
+			while (ws2 >= 8) {
+#if 0
+				if (buf[pos+ws2] < hval) hval = buf[pos+ws2];
+				left_hval[ws2] = hval;
+				if (buf[pos+ws2-1] < hval) hval = buf[pos+ws2-1];
+				left_hval[ws2-1] = hval;
+				if (buf[pos+ws2-2] < hval) hval = buf[pos+ws2-2];
+				left_hval[ws2-2] = hval;
+				if (buf[pos+ws2-3] < hval) hval = buf[pos+ws2-3];
+				left_hval[ws2-3] = hval;
+				if (buf[pos+ws2-4] < hval) hval = buf[pos+ws2-4];
+				left_hval[ws2-4] = hval;
+				if (buf[pos+ws2-5] < hval) hval = buf[pos+ws2-5];
+				left_hval[ws2-5] = hval;
+				if (buf[pos+ws2-6] < hval) hval = buf[pos+ws2-6];
+				left_hval[ws2-6] = hval;
+				if (buf[pos+ws2-7] < hval) hval = buf[pos+ws2-7];
+				left_hval[ws2-7] = hval;
+#else
+				v8si h = (v8si)_mm256_loadu_ps((float*)&buf[pos+ws2-7]);
+				v8si lh = v8si_sufix_min8(h, hval);
+				_mm256_storeu_ps((float*)(&left_hval[ws2-7]), (__m256)lh);
+				hval = lh[0];
+#endif
+				ws2 -= 8;
+			}
+			for (int i=ws2; i>=0; i--) {
+				if (buf[pos+i] < hval) hval = buf[pos+i];
+				left_hval[i] = hval;
+			}
+
+#endif
 #if 0
 			printf("left min ");
 			for (int i=0; i<ws; i++) {
@@ -228,10 +301,25 @@ void syncmer32(const string & seq, int length, int avx) {
 #endif
 			hval = buf[pos+ws];
 			right_hval[0] = hval;
+#if 0
 			for (int i=1; i<=ws; i++) {
 				if (buf[pos+ws+i] < hval) hval = buf[pos+ws+i];
 				right_hval[i] = hval;
 			}
+#else
+			int ii = 1;
+			while (ii+7 <= ws) {
+				v8si h = (v8si)_mm256_loadu_ps((float*)&buf[pos+ws+ii]);
+				v8si rh = v8si_prefix_min8(h, hval);
+				_mm256_storeu_ps((float*)(&right_hval[ii]), (__m256)rh);
+				hval = rh[7];
+				ii += 8;
+			}
+			for (; ii<=ws; ii++) {
+				if (buf[pos+ws+ii] < hval) hval = buf[pos+ws+ii];
+				right_hval[ii] = hval;
+			}
+#endif
 #if 0
 			printf("right min ");
 			for (int i=0; i<ws; i++) {
