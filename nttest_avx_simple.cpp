@@ -312,9 +312,9 @@ void syncmer32(const string & seq, int length, int avx) {
 					v8si lg = {0, 1, 2, 3, 4, 5, 6, 7};
 					v8si cmp = (ws-j > lg);
 					//printf("ws %d j %d cmp ", ws, j); printv8si(cmp); printf("\n");
+#if 0
 					cc = -(cc & cmp);
 					//printf("cc "); printv8si(cc); printf("\n");
-
 					v8si m0 = {0, 0, 0, 2, 0, 4, 0, 6};
 					v8si cc1 = __builtin_shuffle(cc, m0);
   					//printf("cc1 "); printv8si(cc1); printf("\n");
@@ -330,6 +330,12 @@ void syncmer32(const string & seq, int length, int avx) {
 					//printf("cc6 "); printv8si(cc6); printf("\n");
 					num_syncmers += cc6[7];
 					//printf("cc6[7] = %d\n", cc6[7]);
+#endif
+#if 1
+					int cnt = __builtin_ia32_movmskps256((__m256)(cc & cmp)); // obtain MSB for each word
+					//printf("cnt = %d\n", __popcntd(cnt));
+					num_syncmers += __popcntd(cnt);
+#endif
 #if 0
 					int32_t c82[8];
 					_mm256_storeu_ps((float*)c82, (__m256)cc);
