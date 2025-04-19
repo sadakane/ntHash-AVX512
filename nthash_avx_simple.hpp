@@ -22,6 +22,8 @@ Author:
 #include "immintrin.h"
 #include "nthash_simple.hpp"
 
+typedef int v8si __attribute__ ((vector_size (32)));
+
 void print_m256i(__m256i vx)
 {
   int x[8];

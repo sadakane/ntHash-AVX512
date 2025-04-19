@@ -239,15 +239,73 @@ void syncmer32(const string & seq, int length, int avx) {
 				num_syncmers++;
 			}
 			// check syncmer for the other k-mers
-			for (int j=1; j<ws; j++) {
-				hval = (left_hval[j] < right_hval[j-1]) ? left_hval[j] : right_hval[j-1];
-				if (buf[pos+j] == hval || buf[pos+ws-1+j] == hval) {
-					//printf("i=%d syncmer (%d) ", start + pos + j, smer_len);
-					//for (int k=0; k<window_len; k++) putchar(seq[start + pos + j + k]);
-					//printf("\n");
-					num_syncmers++;
+			if (avx) {
+				v8si hl, hr, hm;
+				//uint32_t hval8[8];
+				for (int j=1; j<ws; j+=8) {
+					memcpy (&hl, &left_hval[j], sizeof hl);
+					memcpy (&hr, &right_hval[j-1], sizeof hr);
+					hm = __builtin_ia32_pminsd256(hl, hr);
+					//memcpy (hval8, &hm, sizeof hm);
+#if 0
+					printf("hval8 ");
+					for (int i=0; i<8; i++) {
+						printf("%x ", hval8[i]);
+					}
+					printf("\n");
+#endif
+
+#if 0
+					int w = 8;
+					if (j+w > ws) w = ws-j;
+					for (int k=0; k<w; k++) {
+						//printf("j=%d k=%d buf %x %x hval8 %x\n", j, k, buf[pos+j+k+1], buf[pos+ws-1+j+k+1], hval8[k]);
+						if (buf[pos+j+k+0] == hval8[k] || buf[pos+ws-1+j+k+0] == hval8[k]) {
+							//printf(">i=%d syncmer (%d) ", start + pos + j + k+0, smer_len);
+							//for (int s=0; s<window_len; s++) putchar(seq[start + pos + j + k + 0 + s]);
+							//printf("\n");
+							num_syncmers++;
+						}	
+					}
+#else
+					v8si b1, b2;
+					memcpy (&b1, &buf[pos+j], sizeof b1);
+					memcpy (&b2, &buf[pos+ws-1+j], sizeof b2);
+					v8si c1 = (b1 == hm);
+					v8si c2 = (b2 == hm);
+					v8si cc = c1 | c2;
+					int32_t c8[8];
+					//int32_t c81[8];
+					//int32_t c82[8];
+					memcpy (c8, &cc, sizeof c1);
+					//memcpy (c81, &c1, sizeof c1);
+					//memcpy (c82, &c2, sizeof c2);
+					int w = 8;
+					if (j+w > ws) w = ws-j;
+					for (int k=0; k<w; k++) {
+						//printf("j=%d k=%d buf %x %x hval8 %x\n", j, k, buf[pos+j+k+1], buf[pos+ws-1+j+k+1], hval8[k]);
+						if (c8[k] == -1) {
+							//printf(">i=%d syncmer (%d) ", start + pos + j + k+0, smer_len);
+							//for (int s=0; s<window_len; s++) putchar(seq[start + pos + j + k + 0 + s]);
+							//printf("\n");
+							num_syncmers++;
+						}	
+					}
+#endif
 				}
-	
+
+			} else {
+				for (int j=1; j<ws; j++) {
+					hval = (left_hval[j] < right_hval[j-1]) ? left_hval[j] : right_hval[j-1];
+					if (buf[pos+j] == hval || buf[pos+ws-1+j] == hval) {
+						//printf("i=%d syncmer (%d) hval %x j=%d ", start + pos + j, smer_len, hval, j);
+						//for (int k=0; k<window_len; k++) putchar(seq[start + pos + j + k]);
+						//printf("\n");
+						num_syncmers++;
+					}
+					
+				}
+				
 			}
 			pos += ws;
 		}
