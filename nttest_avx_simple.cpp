@@ -64,12 +64,10 @@ static const struct option longopts[] = {
 
 static bool debug = true;
 
-//static const string itm[] = { "nthash", "nthash32", "ntavx2", "ntavx232", "ntavx512", "ntavx532" };
-//static const string itm[] = { "nthash32", "ntavx232", "syncmer32", "syncmer32avx" };
-//static const string itm[] = { "nthash", "ntavx2", "syncmer64", "syncmer64avx" };
-//unsigned int nb_itm = 6; // skips ntbase 
-unsigned int nb_itm = 5; // skips ntbase 
-static const string itm[] = { "nthash32", "ntavx232", "ntavx232buf", "syncmer32", "syncmer32avx"};
+//unsigned int nb_itm = 5; // skips ntbase 
+//static const string itm[] = { "nthash32", "ntavx232", "ntavx232buf", "syncmer32", "syncmer32avx"};
+unsigned int nb_itm = 1; 
+static const string itm[] = { "syncmer32avx"};
 
 void getFtype(const char *fName) {
 	std::ifstream in(fName);
@@ -151,15 +149,26 @@ void hashSeqAvx2x32buf(const string & seq, unsigned int length, uint32_t *buf) {
     if (debug) std::cout << std::hex << "first hash AVX2x32 " <<  hval0 << std::endl;
         
 	kmerSeq += 7;
-	std::memcpy(buf, &_hVal, sizeof _hVal);
+	//std::memcpy(buf, &_hVal, sizeof _hVal);
+	_mm256_storeu_ps((float*)(buf), (__m256)_hVal);
 
 	size_t sentinel = length - opt::kmerLen + 1;
 
 	for (size_t i = 8; i < sentinel; i += 8, kmerSeq += 8) {
 		_hVal = _mm256_NTC_epu32(kmerSeq, kmerSeq + opt::kmerLen, _k, _fhVal, _rhVal);
-		std::memcpy(buf+i, &_hVal, sizeof _hVal);
+		//std::memcpy(buf+i, &_hVal, sizeof _hVal);
+		_mm256_storeu_ps((float*)(buf+i), (__m256)_hVal);
 	}
 
+}
+
+void printv8si(v8si vx)
+{
+  int x[8];
+  memcpy (x, &vx, sizeof vx);
+  for (int i=0; i<8; i++) {
+    printf("%d ", x[i]);
+  }  
 }
 
 void syncmer32(const string & seq, int length, int avx) {
@@ -243,8 +252,10 @@ void syncmer32(const string & seq, int length, int avx) {
 				v8si hl, hr, hm;
 				//uint32_t hval8[8];
 				for (int j=1; j<ws; j+=8) {
-					memcpy (&hl, &left_hval[j], sizeof hl);
-					memcpy (&hr, &right_hval[j-1], sizeof hr);
+					//memcpy (&hl, &left_hval[j], sizeof hl);
+					//memcpy (&hr, &right_hval[j-1], sizeof hr);
+					hl = (v8si)_mm256_loadu_ps((float*)&left_hval[j]);
+					hr = (v8si)_mm256_loadu_ps((float*)&right_hval[j-1]);
 					hm = __builtin_ia32_pminsd256(hl, hr);
 					//memcpy (hval8, &hm, sizeof hm);
 #if 0
@@ -269,28 +280,66 @@ void syncmer32(const string & seq, int length, int avx) {
 					}
 #else
 					v8si b1, b2;
-					memcpy (&b1, &buf[pos+j], sizeof b1);
-					memcpy (&b2, &buf[pos+ws-1+j], sizeof b2);
+					//memcpy (&b1, &buf[pos+j], sizeof b1);
+					//memcpy (&b2, &buf[pos+ws-1+j], sizeof b2);
+					b1 = (v8si)_mm256_loadu_ps((float*)&buf[pos+j]);
+					b2 = (v8si)_mm256_loadu_ps((float*)&buf[pos+ws-1+j]);
 					v8si c1 = (b1 == hm);
 					v8si c2 = (b2 == hm);
 					v8si cc = c1 | c2;
+#if 0
 					int32_t c8[8];
-					//int32_t c81[8];
-					//int32_t c82[8];
-					memcpy (c8, &cc, sizeof c1);
-					//memcpy (c81, &c1, sizeof c1);
-					//memcpy (c82, &c2, sizeof c2);
+					//memcpy (c8, &cc, sizeof c8);
+					_mm256_storeu_ps((float*)c8, (__m256)cc);
 					int w = 8;
 					if (j+w > ws) w = ws-j;
 					for (int k=0; k<w; k++) {
 						//printf("j=%d k=%d buf %x %x hval8 %x\n", j, k, buf[pos+j+k+1], buf[pos+ws-1+j+k+1], hval8[k]);
+#if 0
 						if (c8[k] == -1) {
-							//printf(">i=%d syncmer (%d) ", start + pos + j + k+0, smer_len);
-							//for (int s=0; s<window_len; s++) putchar(seq[start + pos + j + k + 0 + s]);
-							//printf("\n");
+							printf(">i=%d syncmer (%d) ", start + pos + j + k+0, smer_len);
+							for (int s=0; s<window_len; s++) putchar(seq[start + pos + j + k + 0 + s]);
+							printf("\n");
 							num_syncmers++;
 						}	
+#else
+						num_syncmers -= c8[k];
+#endif
 					}
+#endif
+
+#if 1
+					v8si lg = {0, 1, 2, 3, 4, 5, 6, 7};
+					v8si cmp = (ws-j > lg);
+					//printf("ws %d j %d cmp ", ws, j); printv8si(cmp); printf("\n");
+					cc = -(cc & cmp);
+					//printf("cc "); printv8si(cc); printf("\n");
+
+					v8si m0 = {0, 0, 0, 2, 0, 4, 0, 6};
+					v8si cc1 = __builtin_shuffle(cc, m0);
+  					//printf("cc1 "); printv8si(cc1); printf("\n");
+					v8si cc2 = __builtin_ia32_paddd256(cc, cc1); // cc2: 00 01 22 23 44 45 66 67
+					//printf("cc2 "); printv8si(cc2); printf("\n");
+					v8si m1 = {0, 0, 0, 1, 0, 0, 0, 5};
+					v8si cc3 = __builtin_shuffle(cc2, m1);
+					v8si cc4 = __builtin_ia32_paddd256(cc2, cc3); // cc2: 00 0001 0012 0123 4444 44445 4456 4567
+					//printf("cc4 "); printv8si(cc4); printf("\n");
+					v8si m2 = {0, 0, 0, 0, 0, 0, 0, 3};
+					v8si cc5 = __builtin_shuffle(cc4, m2);
+					v8si cc6 = __builtin_ia32_paddd256(cc4, cc5); // cc2: 00 0001 0012 0123 4444 44445 4456 01234567
+					//printf("cc6 "); printv8si(cc6); printf("\n");
+					num_syncmers += cc6[7];
+					//printf("cc6[7] = %d\n", cc6[7]);
+#if 0
+					int32_t c82[8];
+					_mm256_storeu_ps((float*)c82, (__m256)cc);
+					for (int k=0; k<8; k++) {
+						num_syncmers += c82[k];
+					}
+#endif
+
+#endif
+
 #endif
 				}
 
