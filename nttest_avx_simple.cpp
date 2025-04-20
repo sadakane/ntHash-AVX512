@@ -145,75 +145,65 @@ void hashSeqAvx2x32buf(const string & seq, unsigned int length, uint32_t *buf) {
 	__m256i _fhVal, _rhVal, _hVal;
 
 	_hVal = _mm256_NTC_epu32(kmerSeq, opt::kmerLen, _k, _fhVal, _rhVal);
-    uint32_t hval0 = _mm256_extract_epi32(_hVal, 0);
+    uint32_t hval0 = _hVal[0];
     if (debug) std::cout << std::hex << "first hash AVX2x32 " <<  hval0 << std::endl;
         
 	kmerSeq += 7;
-	//std::memcpy(buf, &_hVal, sizeof _hVal);
-	_mm256_storeu_ps((float*)(buf), (__m256)_hVal);
+	AVX_STORE_INT(buf, _hVal);
 
 	size_t sentinel = length - opt::kmerLen + 1;
 
 	for (size_t i = 8; i < sentinel; i += 8, kmerSeq += 8) {
 		_hVal = _mm256_NTC_epu32(kmerSeq, kmerSeq + opt::kmerLen, _k, _fhVal, _rhVal);
-		//std::memcpy(buf+i, &_hVal, sizeof _hVal);
-		_mm256_storeu_ps((float*)(buf+i), (__m256)_hVal);
+		AVX_STORE_INT(buf+i, _hVal);
 	}
 
 }
 
 void printv8si(v8si vx)
 {
-  int x[8];
-  memcpy (x, &vx, sizeof vx);
+  //int x[8];
+  //memcpy (x, &vx, sizeof vx);
   for (int i=0; i<8; i++) {
-    printf("%d ", x[i]);
+    printf("%d ", vx[i]);
   }  
 }
 
 v8si v8si_suffix_min8(v8si x0, int m)
 {
   // x0: a b c d e f g h
-  //if (m < x0[7]) x0[7] = m;
   v8si x0m = x0;
   x0m[7] = m;
-  x0 = __builtin_ia32_pminsd256(x0, x0m);
+  x0 = AVX_MIN_INT(x0, x0m);
   v8si m0 = {1, 1, 3, 3, 5, 5, 7, 7};
-  v8si x1 = __builtin_shuffle(x0, m0); // x1: b b d d f f h h
-  v8si x2 = __builtin_ia32_pminsd256(x0, x1); // x2:  ab b cd d ef f gh h
+  v8si x1 = AVX_SHUFFLE(x0, m0); // x1: b b d d f f h h
+  v8si x2 = AVX_MIN_INT(x0, x1);
   v8si m1 = {2, 2, 3, 3, 6, 6, 7, 7};
-  v8si x3 = __builtin_shuffle(x2, m1); // x3: cd cd d d gh gh h h
-  v8si x4 = __builtin_ia32_pminsd256(x3, x2); // x4: abcd bcd cd d efgh fgh gh h
+  v8si x3 = AVX_SHUFFLE(x2, m1); // x3: cd cd d d gh gh h h
+  v8si x4 = AVX_MIN_INT(x2, x3);
   v8si m2 = {4, 4, 4, 4, 7, 7, 7, 7};
-  v8si x5 = __builtin_shuffle(x4, m2); // x5: efgh efgh efgh efgh h h h h
-  v8si x6 = __builtin_ia32_pminsd256(x4, x5); // x6: abcdefgh bcdefgh cdefgh defgh efgh fgh gh h
+  v8si x5 = AVX_SHUFFLE(x4, m2); // x5: efgh efgh efgh efgh h h h h
+  v8si x6 = AVX_MIN_INT(x4, x5);
   return x6;
 }
 
 v8si v8si_prefix_min8(v8si x0, int m)
 {
   // x0: a b c d e f g h
-//  if (m < x0[0]) x0[0] = m;
   v8si x0m = x0;
   x0m[0] = m;
-  x0 = __builtin_ia32_pminsd256(x0, x0m);
+  x0 = AVX_MIN_INT(x0, x0m);
   v8si m0 = {0, 0, 2, 2, 4, 4, 6, 6};
-  v8si x1 = __builtin_shuffle(x0, m0); // x1: a a c c e e g g
-  //printf("x1 "); printv4sl(x1); printf("\n");
-//  v8si x2 = Min(x0, x1); // x2:  a ab c cd e ef g gh
-  v8si x2 = __builtin_ia32_pminsd256(x0, x1);
-  //printf("x2 "); printv4sl(x2); printf("\n");
+  v8si x1 = AVX_SHUFFLE(x0, m0); // x1: a a c c e e g g
+  v8si x2 = AVX_MIN_INT(x0, x1); // x2:  a ab c cd e ef g gh
   v8si m1 = {0, 0, 1, 1, 4, 4, 5, 5};
-  v8si x3 = __builtin_shuffle(x2, m1); // x3: a a ab ab e e ef ef
-  //printf("x3 "); printv4sl(x3); printf("\n");
-  v8si x4 = __builtin_ia32_pminsd256(x3, x2); // x4: a ab abc abcd e ef efg efgh
-  //printf("x4 "); printv4sl(x4); printf("\n");
+  v8si x3 = AVX_SHUFFLE(x2, m1); // x3: a a ab ab e e ef ef
+  v8si x4 = AVX_MIN_INT(x2, x3);
   v8si m2 = {0, 0, 0, 0, 3, 3, 3, 3};
-  v8si x5 = __builtin_shuffle(x4, m2); // x5: a a a a abcd abcd abcd abcd
-  v8si x6 = __builtin_ia32_pminsd256(x4, x5); // x6: a ab abc abcd abcde abcdef abcdefg abcdefgh
+  v8si x5 = AVX_SHUFFLE(x4, m2); // x5: a a a a abcd abcd abcd abcd
+  v8si x6 = AVX_MIN_INT(x4, x5); // x6: a ab abc abcd abcde abcdef abcdefg abcdefgh
   return x6;
 }
-
 
 void syncmer32(const string & seq, int length, int avx) {
 #define BUFW 26
@@ -245,52 +235,52 @@ void syncmer32(const string & seq, int length, int avx) {
 		}
 		uint32_t hval;
 
-		while (pos < len) {
-			hval = buf[pos+ws-1];
-			left_hval[ws-1] = hval;
-			int ws2 = ws-2;
-			while (ws2 >= 0) {
-				v8si h = (v8si)_mm256_loadu_ps((float*)&buf[pos+ws2-7]);
-				v8si lh = v8si_suffix_min8(h, hval);
-				_mm256_storeu_ps((float*)(&left_hval[ws2-7]), (__m256)lh);
-				hval = lh[0];
-				ws2 -= 8;
-			}
-			hval = buf[pos+ws];
-			right_hval[0] = hval;
-			int ii = 1;
-			while (ii <= ws) {
-				v8si h = (v8si)_mm256_loadu_ps((float*)&buf[pos+ws+ii]);
-				v8si rh = v8si_prefix_min8(h, hval);
-				_mm256_storeu_ps((float*)(&right_hval[ii]), (__m256)rh);
-				hval = rh[7];
-				ii += 8;
-			}
-			// check syncmer for the first k-mer
-			hval = left_hval[0];
-			if (buf[pos] == hval || buf[pos+ws-1] == hval) {
-				//printf("i=%d syncmer (%d) ", start + pos, smer_len);
-				//for (int k=0; k<window_len; k++) putchar(seq[start + pos + k]);
-				//printf("\n");
-				num_syncmers++;
-			}
-			// check syncmer for the other k-mers
-			if (avx) {
+		if (avx) {
+			while (pos < len) {
+				hval = buf[pos+ws-1];
+				left_hval[ws-1] = hval;
+				int ws2 = ws-2;
+				while (ws2 >= 0) {
+					v8si h = AVX_LOAD_INT(&buf[pos+ws2-7]);
+					v8si lh = v8si_suffix_min8(h, hval);
+					AVX_STORE_INT(&left_hval[ws2-7], lh);
+					hval = lh[0];
+					ws2 -= 8;
+				}
+				hval = buf[pos+ws];
+				right_hval[0] = hval;
+				int ii = 1;
+				while (ii <= ws) {
+					v8si h = AVX_LOAD_INT(&buf[pos+ws+ii]);
+					v8si rh = v8si_prefix_min8(h, hval);
+					AVX_STORE_INT(&right_hval[ii], rh);
+					hval = rh[7];
+					ii += 8;
+				}
+				// check syncmer for the first k-mer
+				hval = left_hval[0];
+				if (buf[pos] == hval || buf[pos+ws-1] == hval) {
+					//printf("i=%d syncmer (%d) ", start + pos, smer_len);
+					//for (int k=0; k<window_len; k++) putchar(seq[start + pos + k]);
+					//printf("\n");
+					num_syncmers++;
+				}
+				// check syncmer for the other k-mers
 				v8si hl, hr, hm;
 				for (int j=1; j<ws; j+=8) {
-					hl = (v8si)_mm256_loadu_ps((float*)&left_hval[j]);
-					hr = (v8si)_mm256_loadu_ps((float*)&right_hval[j-1]);
-					hm = __builtin_ia32_pminsd256(hl, hr);
+					hl = AVX_LOAD_INT(&left_hval[j]);
+					hr = AVX_LOAD_INT(&right_hval[j-1]);
+					hm = AVX_MIN_INT(hl, hr);
 					v8si b1, b2;
-					b1 = (v8si)_mm256_loadu_ps((float*)&buf[pos+j]);
-					b2 = (v8si)_mm256_loadu_ps((float*)&buf[pos+ws-1+j]);
+					b1 = AVX_LOAD_INT(&buf[pos+j]);
+					b2 = AVX_LOAD_INT(&buf[pos+ws-1+j]);
 					v8si c1 = (b1 == hm);
 					v8si c2 = (b2 == hm);
 					v8si cc = c1 | c2;
-
+	
 					v8si lg = {0, 1, 2, 3, 4, 5, 6, 7};
 					v8si cmp = (ws-j > lg);
-					int cnt = __builtin_ia32_movmskps256((__m256)(cc & cmp)); // obtain MSB for each word
+					int cnt = AVX_MSB_INT(cc & cmp); // obtain MSB for each word
 					//for (int i=0; i<8; i++) {
 					//	if (cnt & (1<<i)) {
 					//		printf("i=%d syncmer (%d) hval %x j=%d ", start + pos + j + i, smer_len, hval, j);
@@ -298,22 +288,46 @@ void syncmer32(const string & seq, int length, int avx) {
 					//		printf("\n");
 					//	}
 					//}
-					num_syncmers += __popcntd(cnt);
+					num_syncmers += POPCOUNT(cnt);
 				}
-			} else {
+				pos += ws;
+			}
+	
+		} else {
+			while (pos < len) {
+				hval = buf[pos+ws-1];
+				left_hval[ws-1] = hval;
+				for (int i=ws-2; i>=0; i--) {
+					if (buf[pos+i] < hval) hval = buf[pos+i];
+					left_hval[i] = hval;
+				}
+				hval = buf[pos+ws];
+				right_hval[0] = hval;
+				for (int i=1; i<=ws; i++) {
+					if (buf[pos+ws+i] < hval) hval = buf[pos+ws+i];
+					right_hval[i] = hval;
+				}
+				// check syncmer for the first k-mer
+				hval = left_hval[0];
+				if (buf[pos] == hval || buf[pos+ws-1] == hval) {
+					//printf("i=%d syncmer (%d) ", start + pos, smer_len);
+					//for (int k=0; k<window_len; k++) putchar(seq[start + pos + k]);
+					//printf("\n");
+					num_syncmers++;
+				}
+				// check syncmer for the other k-mers
 				for (int j=1; j<ws; j++) {
 					hval = (left_hval[j] < right_hval[j-1]) ? left_hval[j] : right_hval[j-1];
 					if (buf[pos+j] == hval || buf[pos+ws-1+j] == hval) {
-						//printf("i=%d syncmer (%d) hval %x j=%d ", start + pos + j, smer_len, hval, j);
+						//printf("i=%d syncmer (%d) ", start + pos + j, smer_len);
 						//for (int k=0; k<window_len; k++) putchar(seq[start + pos + j + k]);
 						//printf("\n");
 						num_syncmers++;
 					}
-					
+		
 				}
-				
-			}
-			pos += ws;
+				pos += ws;
+			}	
 		}
 		start += len;
 		length -= len;

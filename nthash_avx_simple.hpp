@@ -23,6 +23,14 @@ Author:
 #include "nthash_simple.hpp"
 
 typedef int v8si __attribute__ ((vector_size (32)));
+#define AVX_LOAD_INT(p) (v8si)_mm256_loadu_ps((float*)(p))
+#define AVX_STORE_INT(p, x) _mm256_storeu_ps((float*)(p), (__m256)x)
+#define AVX_MIN_INT(x, y) __builtin_ia32_pminsd256((x), (y))
+#define AVX_MSB_INT(x) __builtin_ia32_movmskps256((__m256)(x)) // obtain MSB for each word
+#define AVX_SHUFFLE(x, m) __builtin_shuffle((x), (m))
+#define POPCOUNT(x) __popcntd((x));
+
+
 
 void print_m256i(__m256i vx)
 {
