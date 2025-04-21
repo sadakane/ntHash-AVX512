@@ -28,7 +28,13 @@ typedef int v8si __attribute__ ((vector_size (32)));
 #define AVX_MIN_INT(x, y) __builtin_ia32_pminsd256((x), (y))
 #define AVX_MSB_INT(x) __builtin_ia32_movmskps256((__m256)(x)) // obtain MSB for each word
 #define AVX_SHUFFLE(x, m) __builtin_shuffle((x), (m))
-#define POPCOUNT(x) __popcntd((x));
+
+#if defined(_MSC_VER)
+#include <intrin.h>
+#define POPCOUNT(x) __popcnt64(x)
+#else
+#define POPCOUNT(x) __builtin_popcountll(x)
+#endif
 
 
 
